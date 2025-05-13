@@ -1,0 +1,148 @@
+.hero-wrapper {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-images {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+}
+
+.hero-img {
+  width: 33.33vw;
+  height: 100vh;
+  object-fit: cover;
+  filter: brightness(0.7);
+}
+
+.hero-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  color: #fff;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.hero-title {
+  font-size: 8rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  letter-spacing: 5px;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.hero-subtitle {
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.hero-cta {
+  font-size: 1.2rem;
+  padding: 1rem 2.5rem;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  transition: background 0.2s, color 0.2s;
+}
+
+.hero-cta:hover {
+  background: #222;
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .hero-title {
+    font-size: 2.2rem;
+  }
+  .hero-subtitle {
+    font-size: 1rem;
+  }
+  .hero-img {
+    width: 33.33vw;
+    height: 100vh;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero-images {
+    flex-direction: column;
+    height: 60vh;
+  }
+  .hero-img {
+    width: 100vw;
+    height: 20vh;
+  }
+  .hero-title {
+    font-size: 1.3rem;
+  }
+  .hero-subtitle {
+    font-size: 0.9rem;
+  }
+  .hero-cta {
+    font-size: 1rem;
+    padding: 0.7rem 1.5rem;
+  }
+}
+
+.upload-modal-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upload-modal {
+  background: #fdf6ee;
+  border-radius: 24px;
+  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.18);
+  padding: 4rem 3rem;
+  width: 80vw; /* Genişliği artırdık */
+  height: 80vh; /* Yüksekliği artırdık */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  font-size: 1.2rem; /* Yazılar büyüdü */
+}
+
+.upload-modal h1,
+.upload-modal h2 {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+@media (max-width: 600px) {
+  .upload-modal {
+    width: 95vw;
+    height: 85vh;
+    padding: 2rem 1rem;
+    font-size: 1rem;
+  }
+}
