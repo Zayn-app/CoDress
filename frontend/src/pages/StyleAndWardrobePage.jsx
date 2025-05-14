@@ -1,113 +1,156 @@
 import React, { useState, useEffect } from 'react';
 import './UserPage.css';
+import { useLocation } from 'react-router-dom';
+import UploadModal from '../components/UploadModal';
 
 const styleOptions = [
   { value: 'casual', label: 'Casual' },
   { value: 'formal', label: 'Formal' },
 ];
 
-// Backend URL - change if your backend is running on a different port
 const BACKEND_URL = 'http://localhost:5000';
 
 export default function StyleAndWardrobePage() {
+  const location = useLocation();
+  console.log('[StyleAndWardrobePage] Location state on load:', location.state);
+
   const [style, setStyle] = useState('casual');
   const [query, setQuery] = useState('');
   const [photos, setPhotos] = useState([]);
-  const [uploadedImages, setUploadedImages] = useState([]);
   const [matchedOutfits, setMatchedOutfits] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isFetchingPhotos, setIsFetchingPhotos] = useState(true);
   const [searchError, setSearchError] = useState('');
   const [fetchError, setFetchError] = useState('');
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   useEffect(() => {
-    // Load previously uploaded images from local storage
-    const saved = localStorage.getItem('codress_uploaded_images');
-    if (saved) {
-      try {
-        setUploadedImages(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse uploaded images data", e);
-      }
+    console.log('[StyleAndWardrobePage] useEffect triggered. Location state:', location.state);
+    if (location.state?.images) {
+      console.log('[StyleAndWardrobePage] Using images from navigation state:', location.state.images);
+      setPhotos(location.state.images);
+      setIsFetchingPhotos(false);
+    } else {
+      console.log('[StyleAndWardrobePage] No images in location.state, calling fetchAllImages.');
+      setIsFetchingPhotos(true);
+      fetchAllImages();
     }
+  }, [location.pathname, location.state?.timestamp, location.state?.images]);
 
-    // Fetch all available images from the backend
-    fetchAllImages();
-  }, []);
+  useEffect(() => {
+    console.log('[StyleAndWardrobePage] Photos state updated:', photos);
+  }, [photos]);
+
+  useEffect(() => {
+    console.log('[StyleAndWardrobePage] matchedOutfits state updated:', matchedOutfits);
+  }, [matchedOutfits]);
 
   const fetchAllImages = async () => {
+    console.log('[StyleAndWardrobePage] fetchAllImages called.');
+    setIsFetchingPhotos(true);
     setFetchError('');
     try {
-      console.log('Fetching images from:', `${BACKEND_URL}/api/images`);
-      const response = await fetch(`${BACKEND_URL}/api/images`);
-      
+      const response = await fetch(`${BACKEND_URL}/api/images`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        cache: 'no-store'
+      });
+      console.log('[StyleAndWardrobePage] fetchAllImages response status:', response.status);
       if (response.ok) {
         const data = await response.json();
-        console.log('Images fetched successfully:', data);
+        console.log('[StyleAndWardrobePage] Images fetched successfully from API:', data);
         setPhotos(data);
       } else {
         const errorText = await response.text();
-        console.error('Failed to fetch images from server:', response.status, errorText);
+        console.error('[StyleAndWardrobePage] Failed to fetch images from server:', response.status, errorText);
         setFetchError(`Server error: ${response.status}`);
+        setPhotos([]); // Clear photos on error
       }
     } catch (error) {
-      console.error('Error fetching images:', error);
+      console.error('[StyleAndWardrobePage] Error fetching images:', error);
       setFetchError(`Connection error: ${error.message}`);
+      setPhotos([]); // Clear photos on error
+    } finally {
+      console.log('[StyleAndWardrobePage] fetchAllImages finally block, setting isFetchingPhotos to false.');
+      setIsFetchingPhotos(false);
     }
   };
 
   const handleSearch = async () => {
-    // Combine style and query for more specific search
-    const searchQuery = `${style} ${query}`.trim();
-    
-    if (!searchQuery) {
-      setSearchError('Please enter a search term');
+    console.log('[StyleAndWardrobePage] handleSearch triggered.');
+    if (!query.trim()) {
+      setSearchError('Lütfen bir arama terimi girin (Please enter a search term)');
       return;
     }
-
     setIsSearching(true);
     setSearchError('');
-    
+    setMatchedOutfits([]); // Clear previous results immediately
+
+    const payload = { query: query.trim(), style: style };
+    console.log('[StyleAndWardrobePage] Sending to /api/search:', payload);
+
     try {
       const response = await fetch(`${BACKEND_URL}/api/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify(payload), 
       });
       
-      if (!response.ok) {
-        throw new Error('Search request failed');
+      console.log('[StyleAndWardrobePage] /api/search response status:', response.status);
+      const responseText = await response.text(); // Get raw response text for logging
+      console.log('[StyleAndWardrobePage] /api/search raw response text:', responseText);
+
+      if (response.ok) {
+        const results = JSON.parse(responseText); // Parse the text
+        console.log('[StyleAndWardrobePage] Search results received from API:', results);
+        setMatchedOutfits(results);
+      } else {
+        console.error('[StyleAndWardrobePage] Search request failed. Status:', response.status, 'Response:', responseText);
+        setSearchError(`Arama başarısız oldu (sunucu hatası): ${response.status}`);
+        setMatchedOutfits([]);
       }
-      
-      const results = await response.json();
-      console.log('Search results:', results);
-      setMatchedOutfits(results);
     } catch (error) {
-      console.error('Search error:', error);
-      setSearchError(`Search failed: ${error.message}`);
+      console.error('[StyleAndWardrobePage] Catch block error during search:', error);
+      setSearchError(`Arama sırasında bir hata oluştu: ${error.message}`);
       setMatchedOutfits([]);
     } finally {
+      console.log('[StyleAndWardrobePage] handleSearch finally block, setting isSearching to false.');
       setIsSearching(false);
     }
   };
 
-  // Helper function to create proper image URL
   const getImageUrl = (path) => {
     if (!path) return '';
-    // If the URL already starts with http, return as is
     if (path.startsWith('http')) return path;
-    // If the URL already has a leading slash, don't add another
-    return `${BACKEND_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    const timestamp = new Date().getTime();
+    return `${BACKEND_URL}${path.startsWith('/') ? '' : '/'}${path}?t=${timestamp}`;
   };
 
-  // Format percentage for display
   const formatScore = (score) => {
     return Math.round(score * 100);
   };
 
+  const handleUploadComplete = (allImages) => {
+    console.log('[StyleAndWardrobePage] Upload complete, new image list:', allImages);
+    setPhotos(allImages);
+    setIsFetchingPhotos(false);
+  };
+
+  console.log('[StyleAndWardrobePage] Rendering. isFetchingPhotos:', isFetchingPhotos, 'Photos length:', photos.length, 'FetchError:', fetchError);
+
   return (
     <div className="style-wardrobe-root">
+      {showUploadModal && (
+        <UploadModal 
+          onClose={() => setShowUploadModal(false)}
+          onUploadComplete={handleUploadComplete}
+        />
+      )}
       <div className="style-wardrobe-left">
         <h1 className="chic-title">Stilini Seç & Kıyafet Ara</h1>
         <div className="chic-style-options">
@@ -128,7 +171,6 @@ export default function StyleAndWardrobePage() {
           onChange={e => setQuery(e.target.value)}
           rows={4}
         />
-        
         <div className="search-tips">
           <p>
             <strong>Search Tips:</strong>
@@ -139,61 +181,61 @@ export default function StyleAndWardrobePage() {
             </ul>
           </p>
         </div>
-        
         {searchError && (
-          <div className="search-error" style={{color: 'red', margin: '10px 0'}}>
+          <div className="search-error" style={{ color: 'red', margin: '10px 0' }}>
             {searchError}
           </div>
         )}
-        
-        <button 
-          className="chic-button search-btn" 
-          style={{marginTop: '1rem'}}
+        <button
+          className="chic-button search-btn"
+          style={{ marginTop: '1rem' }}
           onClick={handleSearch}
           disabled={isSearching}
         >
           {isSearching ? 'Aranıyor...' : 'Kıyafet Ara'}
         </button>
-
-        {/* Debug button to retry fetching images */}
         <button 
           className="chic-button" 
-          style={{marginTop: '0.5rem', background: '#6c757d'}}
-          onClick={fetchAllImages}
+          style={{ marginTop: '1rem', backgroundColor: '#5cb85c' }}
+          onClick={() => setShowUploadModal(true)}
         >
-          Resimleri Yenile
+          Yeni Resim Yükle
         </button>
       </div>
-      
+
       <div className="style-wardrobe-right">
         <div className="uploaded-images-section">
-          <h2 className="chic-subtitle" style={{textAlign: 'center', marginBottom: '1rem'}}>
-            Yüklenen Resimler {photos.length > 0 ? `(${photos.length})` : ''}
+          <h2 className="chic-subtitle" style={{ textAlign: 'center', marginBottom: '1rem' }}>
+            Yüklenen Resimler {photos.length > 0 && !isFetchingPhotos ? `(${photos.length})` : ''}
           </h2>
-          
           {fetchError && (
-            <div className="fetch-error" style={{color: 'red', textAlign: 'center', margin: '10px 0'}}>
+            <div className="fetch-error" style={{ color: 'red', textAlign: 'center', margin: '10px 0' }}>
               {fetchError}
             </div>
           )}
-          
-          {photos.length > 0 ? (
+          {isFetchingPhotos ? (
+            <div className="style-wardrobe-placeholder">Yükleniyor...</div>
+          ) : photos.length > 0 ? (
             <div className="style-wardrobe-imgs">
               {photos.map((img, i) => {
+                if (!img || !img.url) {
+                  console.error('[StyleAndWardrobePage] Rendering photos: Invalid image object or URL at index', i, img);
+                  return <div key={`error-${i}`} className="image-card-error">Invalid image data</div>;
+                }
                 const imageUrl = getImageUrl(img.url);
-                console.log(`Image ${i} URL:`, imageUrl);
+                console.log(`[StyleAndWardrobePage] Rendering image ${i} with URL:`, imageUrl);
                 return (
-                  <div key={i} className="image-card">
-                    <img 
-                      src={imageUrl} 
-                      alt={`Clothing item ${i+1}`} 
-                      className="style-wardrobe-img" 
+                  <div key={img.id || img.filename || i} className="image-card">
+                    <img
+                      src={imageUrl}
+                      alt={`Clothing item ${img.filename || i + 1}`}
+                      className="style-wardrobe-img"
                       onError={(e) => {
-                        console.error(`Error loading image ${i}:`, imageUrl);
-                        e.target.src = 'https://via.placeholder.com/150?text=Image+Error';
+                        console.error(`[StyleAndWardrobePage] Error loading image ${i} from URL:`, imageUrl);
+                        e.target.src = 'https://via.placeholder.com/150?text=Image+Load+Error';
                       }}
                     />
-                    <div className="image-filename">{img.filename}</div>
+                    <div className="image-filename">{img.filename || 'Unnamed file'}</div>
                   </div>
                 );
               })}
@@ -204,10 +246,9 @@ export default function StyleAndWardrobePage() {
             </div>
           )}
         </div>
-        
+
         <div className="matched-outfits-section" style={{marginTop: '2rem'}}>
           <h2 className="chic-subtitle" style={{textAlign: 'center'}}>Arama Sonuçları</h2>
-          
           {matchedOutfits.length > 0 ? (
             <div className="matched-outfits">
               {matchedOutfits.map((outfit, i) => {
@@ -246,4 +287,4 @@ export default function StyleAndWardrobePage() {
       </div>
     </div>
   );
-} 
+}

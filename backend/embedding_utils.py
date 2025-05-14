@@ -66,97 +66,97 @@ def encode_single_image(image_path):
         raise
 
 def generate_text_embedding(text):
+    print(f"[embedding_utils.py] generate_text_embedding for: '{text[:100]}...'")
     text_tokens = clip.tokenize([text]).to(device)
     with torch.no_grad():
         text_embedding = model.encode_text(text_tokens)
         text_embedding /= text_embedding.norm(dim=-1, keepdim=True)
+    print(f"[embedding_utils.py] Generated text_embedding shape: {text_embedding.shape}")
     return text_embedding.cpu().numpy()
 
-def search_images(text_query, image_embeddings, image_paths):
-    """
-    Search for images matching the text query.
-    Handles compound queries with "and" or "ve" (Turkish).
-    Args:
-        text_query: Text to search for
-        image_embeddings: Pre-computed image embeddings
-        image_paths: List of image paths corresponding to embeddings
-    Returns:
-        List of dictionaries with filename and similarity score
-    """
-    # Set minimum threshold for considering a match relevant
-    MIN_SIMILARITY_THRESHOLD = 0.2
+def search_images(text_query, image_embeddings, image_paths, style=None):
+    print(f"[embedding_utils.py] search_images called with text_query: '{text_query}', style: '{style}'")
+    MIN_SIMILARITY_THRESHOLD = 0.2 
     
-    # Handle empty case
-    if len(image_paths) == 0 or image_embeddings.size == 0:
+    if not image_paths or image_embeddings is None or image_embeddings.size == 0:
+        print("[embedding_utils.py] No image_paths or image_embeddings available.")
         return []
     
-    # Check if query has multiple parts separated by "and" or "ve" (Turkish)
-    query_parts = re.split(r'\s+(?:and|ve)\s+', text_query.lower())
-    
-    # If we have a compound query
+    # CRUCIAL CHECK: Ensure consistency between embeddings and paths
+    if image_embeddings.shape[0] != len(image_paths):
+        print(f"[embedding_utils.py] FATAL ERROR: Mismatch between image_embeddings count ({image_embeddings.shape[0]}) and image_paths count ({len(image_paths)}).")
+        # This is a critical state. Consider how to handle - perhaps re-generate embeddings or return an error.
+        # For now, returning empty to prevent further errors.
+        return [] 
+
+    print(f"[embedding_utils.py] Number of image_paths: {len(image_paths)}, image_embeddings shape: {image_embeddings.shape}. Counts match.")
+
+    augmented_query = text_query
+    if style:
+        if style.lower() == 'formal':
+            augmented_query = f"formal style {text_query}" 
+        elif style.lower() == 'casual':
+            augmented_query = f"casual style {text_query}"
+    print(f"[embedding_utils.py] Augmented query: '{augmented_query}'")
+
+    query_parts = re.split(r'\s+(?:and|ve)\s+', augmented_query.lower())
+    final_results_to_return = []
+
     if len(query_parts) > 1:
-        print(f"Compound query detected: {query_parts}")
-        all_results = []
-        
-        # Process each sub-query separately
+        print(f"[embedding_utils.py] Compound query detected: {query_parts}")
+        all_results_compound = []
         for query_part in query_parts:
             query_part = query_part.strip()
-            if not query_part:
-                continue
-                
+            if not query_part: continue
+            print(f"[embedding_utils.py] Processing compound part: '{query_part}'")
             text_embedding = generate_text_embedding(query_part)
-            similarities = image_embeddings @ text_embedding.T
-            similarities = similarities.squeeze()
+            if text_embedding is None or text_embedding.size == 0: 
+                print(f"[embedding_utils.py] Failed to generate embedding for query part: '{query_part}'")
+                continue
             
-            # Get top 3 results for each query part that meet the threshold
-            top_k = min(3, len(image_paths))
-            best_indices = similarities.argsort()[-top_k:][::-1]
+            similarities = (image_embeddings @ text_embedding.T).squeeze()
+            print(f"[embedding_utils.py] Similarities for '{query_part}' (shape {similarities.shape}): min={np.min(similarities):.4f}, max={np.max(similarities):.4f}, mean={np.mean(similarities):.4f}")
+
+            top_k_compound = min(3, len(image_paths)) # Use len(image_paths) for safety
+            best_indices_compound = similarities.argsort()[-top_k_compound:][::-1]
             
-            # Only include results that are sufficiently relevant
-            part_results = []
-            for i in best_indices:
+            for i in best_indices_compound:
+                if i < len(image_paths): # Explicit boundary check
+                    similarity = float(similarities[i])
+                    if similarity >= MIN_SIMILARITY_THRESHOLD:
+                        all_results_compound.append({"filename": image_paths[i], "score": similarity, "query": query_part})
+                else:
+                    print(f"[embedding_utils.py] WARNING: Stale index {i} for image_paths of length {len(image_paths)} in compound query.")
+        
+        all_results_compound.sort(key=lambda x: x["score"], reverse=True)
+        unique_results_compound = {}
+        for result in all_results_compound:
+            filename = result["filename"]
+            if filename not in unique_results_compound or result["score"] > unique_results_compound[filename]["score"]:
+                unique_results_compound[filename] = result
+        final_results_to_return = list(unique_results_compound.values())[:2]
+    else:
+        print(f"[embedding_utils.py] Processing single query: '{augmented_query}'")
+        text_embedding = generate_text_embedding(augmented_query)
+        if text_embedding is None or text_embedding.size == 0:
+            print(f"[embedding_utils.py] Failed to generate embedding for query: '{augmented_query}'")
+            return []
+
+        similarities = (image_embeddings @ text_embedding.T).squeeze()
+        if similarities.size == 1: 
+            similarities = np.array([similarities.item()])
+        print(f"[embedding_utils.py] Similarities for '{augmented_query}' (shape {similarities.shape}): min={np.min(similarities):.4f}, max={np.max(similarities):.4f}, mean={np.mean(similarities):.4f}")
+
+        top_k_single = min(2, len(image_paths)) # Use len(image_paths) for safety
+        best_indices_single = similarities.argsort()[-top_k_single:][::-1]
+        
+        for i in best_indices_single:
+            if i < len(image_paths): # Explicit boundary check
                 similarity = float(similarities[i])
                 if similarity >= MIN_SIMILARITY_THRESHOLD:
-                    part_results.append({
-                        "filename": image_paths[i], 
-                        "score": similarity,
-                        "query": query_part  # Track which part of the query matched this
-                    })
-            
-            all_results.extend(part_results)
-        
-        # Sort all results by score (highest first) and remove duplicates
-        all_results.sort(key=lambda x: x["score"], reverse=True)
-        
-        # Remove duplicates but keep the highest score for each filename
-        unique_results = {}
-        for result in all_results:
-            filename = result["filename"]
-            if filename not in unique_results or result["score"] > unique_results[filename]["score"]:
-                unique_results[filename] = result
-        
-        # Convert back to list and return top 5
-        final_results = list(unique_results.values())
-        return final_results[:5]
+                    final_results_to_return.append({"filename": image_paths[i], "score": similarity})
+            else:
+                print(f"[embedding_utils.py] WARNING: Stale index {i} for image_paths of length {len(image_paths)} in single query.")
     
-    # Standard single query processing
-    else:
-        text_embedding = generate_text_embedding(text_query)
-        similarities = image_embeddings @ text_embedding.T
-        similarities = similarities.squeeze()
-
-        # Get top results
-        top_k = min(5, len(image_paths))
-        best_indices = similarities.argsort()[-top_k:][::-1]
-        
-        # Only include relevant results
-        results = []
-        for i in best_indices:
-            similarity = float(similarities[i])
-            if similarity >= MIN_SIMILARITY_THRESHOLD:
-                results.append({
-                    "filename": image_paths[i], 
-                    "score": similarity
-                })
-        
-        return results
+    print(f"[embedding_utils.py] search_images returning: {final_results_to_return}")
+    return final_results_to_return

@@ -8,7 +8,7 @@ export default function UploadPage() {
   const navigate = useNavigate();
 
   const handlePhotoChange = (e) => {
-    const selectedFiles = Array.from(e.target.files);
+    const selectedFiles = Array.from(e.target.files);NN
     setFiles(selectedFiles); // FormData için dosyalar
     setPhotos(selectedFiles.map((file) => URL.createObjectURL(file))); // Görsel önizleme
   };
@@ -16,7 +16,7 @@ export default function UploadPage() {
   const handleContinue = async () => {
     const formData = new FormData();
     files.forEach((file) => {
-      formData.append("images", file); // Flask tarafında request.files.getlist('images') ile alınabilir
+      formData.append("images", file);
     });
 
     try {
@@ -29,10 +29,22 @@ export default function UploadPage() {
         throw new Error("Yükleme başarısız");
       }
 
-      console.log("Yükleme başarılı");
-      navigate("/style-wardrobe");
+      const data = await response.json();
+      console.log("Upload successful:", data);
+
+      if (data.success && data.allImages) {
+        // Navigate to the style page with the new images
+        navigate("/style-wardrobe", { 
+          state: { 
+            timestamp: new Date().getTime(),
+            images: data.allImages 
+          } 
+        });
+      } else {
+        throw new Error("Upload response missing required data");
+      }
     } catch (err) {
-      console.error("Yükleme hatası:", err);
+      console.error("Upload error:", err);
       alert("Görseller yüklenirken hata oluştu.");
     }
   };
